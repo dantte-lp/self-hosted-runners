@@ -144,7 +144,9 @@ RUN curl -s "https://get.sdkman.io" | bash && \
     # Remove unnecessary files to reduce image size
     rm -rf /root/.sdkman/archives/* \
            /root/.sdkman/tmp/* \
-           /tmp/* /var/tmp/*
+           /tmp/* /var/tmp/* && \
+    # Fix permissions for GitHub Actions (prevents EACCES errors)
+    chmod -R 755 /root/.sdkman
 
 # Set up environment for SDKMAN
 ENV SDKMAN_DIR="/root/.sdkman"
