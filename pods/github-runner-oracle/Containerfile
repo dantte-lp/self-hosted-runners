@@ -140,20 +140,33 @@ ENV GRAALVM_HOME=/opt/graalvm
 ENV JAVA_HOME=/opt/graalvm
 ENV PATH="${GRAALVM_HOME}/bin:${PATH}"
 
-# Install Maven and Gradle
-ARG GRADLE_VERSION="8.5"
-RUN dnf install -y maven && \
-    dnf clean all && \
-    # Install Gradle manually (DNF version may be outdated)
+# Install Maven and Gradle from official sources (avoid dnf bloat)
+# Latest versions from https://github.com/apache/maven and https://github.com/gradle/gradle
+ARG GRADLE_VERSION="9.1.0"
+ARG MAVEN_VERSION="3.9.11"
+
+# Install Maven from Apache (avoid 221-package bloat from dnf install maven)
+RUN curl -fsSL -o maven.tar.gz \
+        https://archive.apache.org/dist/maven/maven-3/${MAVEN_VERSION}/binaries/apache-maven-${MAVEN_VERSION}-bin.tar.gz && \
+    tar -xzf maven.tar.gz -C /opt && \
+    mv /opt/apache-maven-${MAVEN_VERSION} /opt/maven && \
+    rm maven.tar.gz && \
+    ln -s /opt/maven/bin/mvn /usr/local/bin/mvn && \
+    # Install Gradle from gradle.org
     curl -fsSL -o gradle.zip \
         https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip && \
     unzip -q gradle.zip -d /opt && \
     rm gradle.zip && \
-    # Remove Gradle docs to reduce size
-    rm -rf /opt/gradle-${GRADLE_VERSION}/docs \
-           /opt/gradle-${GRADLE_VERSION}/samples && \
-    ln -s /opt/gradle-${GRADLE_VERSION}/bin/gradle /usr/local/bin/gradle && \
+    mv /opt/gradle-${GRADLE_VERSION} /opt/gradle && \
+    # Remove docs and samples to reduce size
+    rm -rf /opt/gradle/docs \
+           /opt/gradle/samples && \
+    ln -s /opt/gradle/bin/gradle /usr/local/bin/gradle && \
     rm -rf /tmp/* /var/tmp/*
+
+ENV M2_HOME=/opt/maven
+ENV GRADLE_HOME=/opt/gradle
+ENV PATH="${M2_HOME}/bin:${GRADLE_HOME}/bin:${PATH}"
 
 # ============================================================================
 # Install static analysis and security tools
@@ -234,11 +247,15 @@ RUN mkdir -p /opt/java-tools && \
 
 ENV PATH="/opt/java-tools/pmd/bin:/opt/java-tools/spotbugs/bin:${PATH}"
 
-# Universal tools and linters
-RUN dnf install -y \
-        yamllint \
-        ShellCheck \
-    && dnf clean all && \
+# Universal tools and linters (yamllint via pip, ShellCheck, hadolint, markdownlint)
+RUN pip3 install --no-cache-dir yamllint && \
+    # Install ShellCheck via dnf (if available) or from GitHub
+    (dnf install -y ShellCheck && dnf clean all) || \
+    (curl -fsSL -o shellcheck.tar.xz \
+        https://github.com/koalaman/shellcheck/releases/download/v0.10.0/shellcheck-v0.10.0.linux.x86_64.tar.xz && \
+    tar -xJf shellcheck.tar.xz && \
+    mv shellcheck-v0.10.0/shellcheck /usr/local/bin/ && \
+    rm -rf shellcheck* && chmod +x /usr/local/bin/shellcheck) && \
     # Install hadolint (Dockerfile linter)
     curl -fsSL -o /usr/local/bin/hadolint \
         https://github.com/hadolint/hadolint/releases/download/v2.14.0/hadolint-Linux-x86_64 && \
@@ -246,7 +263,7 @@ RUN dnf install -y \
     # Install markdownlint-cli
     npm install -g markdownlint-cli && \
     npm cache clean --force && \
-    rm -rf /root/.npm /tmp/*
+    rm -rf /root/.npm /root/.cache/pip /tmp/*
 
 # ============================================================================
 # Install mock (for RPM builds - platform-specific)

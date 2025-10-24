@@ -139,12 +139,33 @@ ENV PATH="${GRAALVM_HOME}/bin:${PATH}"
 
 # Note: Native Image is included by default in GraalVM 25+
 
-# Install Maven and Gradle
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        maven \
-        gradle \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+# Install Maven and Gradle from official sources (avoid apt bloat)
+# Latest versions from https://github.com/apache/maven and https://github.com/gradle/gradle
+ARG GRADLE_VERSION="9.1.0"
+ARG MAVEN_VERSION="3.9.11"
+
+# Install Maven from Apache (avoid dependency bloat from apt)
+RUN curl -fsSL -o maven.tar.gz \
+        https://archive.apache.org/dist/maven/maven-3/${MAVEN_VERSION}/binaries/apache-maven-${MAVEN_VERSION}-bin.tar.gz && \
+    tar -xzf maven.tar.gz -C /opt && \
+    mv /opt/apache-maven-${MAVEN_VERSION} /opt/maven && \
+    rm maven.tar.gz && \
+    ln -s /opt/maven/bin/mvn /usr/local/bin/mvn && \
+    # Install Gradle from gradle.org
+    curl -fsSL -o gradle.zip \
+        https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip && \
+    unzip -q gradle.zip -d /opt && \
+    rm gradle.zip && \
+    mv /opt/gradle-${GRADLE_VERSION} /opt/gradle && \
+    # Remove docs and samples to reduce size
+    rm -rf /opt/gradle/docs \
+           /opt/gradle/samples && \
+    ln -s /opt/gradle/bin/gradle /usr/local/bin/gradle && \
+    rm -rf /tmp/* /var/tmp/*
+
+ENV M2_HOME=/opt/maven
+ENV GRADLE_HOME=/opt/gradle
+ENV PATH="${M2_HOME}/bin:${GRADLE_HOME}/bin:${PATH}"
 
 # ============================================================================
 # Install static analysis and security tools
