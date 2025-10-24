@@ -140,15 +140,23 @@ install: check-prereqs build ## Install systemd quadlet units (requires root)
 	@mkdir -p $(SYSTEMD_DIR)
 	install -m 644 $(PODS_DIR)/github-runner-debian/github-runner-debian.container $(SYSTEMD_DIR)/
 	install -m 644 $(PODS_DIR)/github-runner-oracle/github-runner-oracle.container $(SYSTEMD_DIR)/
+	@if [ -f "$(PODS_DIR)/shared/.env" ]; then \
+		echo -e "$(CYAN)Installing environment file...$(NC)"; \
+		install -m 600 $(PODS_DIR)/shared/.env $(SYSTEMD_DIR)/.env; \
+	else \
+		echo -e "$(YELLOW)Warning: $(PODS_DIR)/shared/.env not found, installing template...$(NC)"; \
+		install -m 600 $(PODS_DIR)/shared/env.example $(SYSTEMD_DIR)/.env; \
+	fi
 	@echo -e "$(CYAN)Reloading systemd daemon...$(NC)"
 	systemctl daemon-reload
 	@echo -e "$(GREEN)Installation complete!$(NC)"
 	@echo ""
 	@echo -e "$(YELLOW)Next steps:$(NC)"
-	@echo "  1. Configure environment: cp pods/shared/env.example pods/shared/.env"
-	@echo "  2. Edit pods/shared/.env and set RUNNER_TOKEN"
-	@echo "  3. Start runners: sudo systemctl start github-runner-debian.service github-runner-oracle.service"
-	@echo "  4. Enable auto-start: sudo systemctl enable github-runner-debian.service github-runner-oracle.service"
+	@echo "  1. Get runner token: make token"
+	@echo "  2. Edit $(SYSTEMD_DIR)/.env and set RUNNER_TOKEN"
+	@echo "  3. Reload systemd: sudo systemctl daemon-reload"
+	@echo "  4. Start runners: sudo systemctl start github-runner-debian.service github-runner-oracle.service"
+	@echo "  5. Enable auto-start: systemctl enable github-runner-debian.service github-runner-oracle.service"
 
 uninstall: ## Uninstall systemd quadlet units (requires root)
 	@if [ "$$(id -u)" -ne 0 ]; then \

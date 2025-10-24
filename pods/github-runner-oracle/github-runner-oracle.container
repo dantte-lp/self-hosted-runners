@@ -38,8 +38,8 @@ Pull=missing
 # Environment Variables
 # ════════════════════════════════════════════════════════════════════
 
-# Load environment from file (create this from env.example)
-EnvironmentFile=/opt/projects/repositories/self-hosted-runners/pods/shared/.env
+# Load environment from file (installed by 'make install')
+EnvironmentFile=/etc/containers/systemd/.env
 
 # Override specific variables (optional)
 Environment=RUNNER_NAME=oraclelinux-runner-ocserv-agent
@@ -88,7 +88,8 @@ SecurityLabelDisable=true
 
 # User namespace mode
 # Options: auto, host, keep-id, nomap, container:id
-UserNS=auto
+# Note: UserNS=auto disabled to avoid subuid issues when running as root
+# UserNS=auto
 
 # ════════════════════════════════════════════════════════════════════
 # Resource Limits

@@ -45,26 +45,44 @@ git clone https://github.com/yourusername/self-hosted-runners.git
 cd self-hosted-runners
 ```
 
-2. **Configure environment**:
+2. **Configure environment** (optional - can be done after install):
 ```bash
 cp pods/shared/env.example pods/shared/.env
-# Edit .env and set RUNNER_TOKEN
+# Edit .env and set RUNNER_TOKEN (or do this in step 4)
 ```
 
-3. **Install systemd units**:
+3. **Build and install**:
 ```bash
 sudo make install
 ```
+This will:
+- Build both runner images
+- Install systemd quadlet units to `/etc/containers/systemd/`
+- Copy environment file to `/etc/containers/systemd/.env`
 
-4. **Start runners**:
+4. **Configure runner token**:
 ```bash
+# Generate token
+make token
+
+# Edit environment file
+sudo vi /etc/containers/systemd/.env
+# Set RUNNER_TOKEN=<token-from-previous-step>
+
+# Reload systemd
 sudo systemctl daemon-reload
+```
+
+5. **Start runners**:
+```bash
 sudo systemctl start github-runner-debian.service
 sudo systemctl start github-runner-oracle.service
 ```
 
-5. **Enable auto-start on boot**:
+6. **Enable auto-start on boot**:
 ```bash
+# Note: Quadlet services auto-enable via [Install] section
+# But you can explicitly enable them:
 sudo systemctl enable github-runner-debian.service
 sudo systemctl enable github-runner-oracle.service
 ```
@@ -230,13 +248,22 @@ Both runners include:
 
 ### Environment Variables
 
-Create `pods/shared/.env` from `env.example`:
+After installation, configure `/etc/containers/systemd/.env`:
 
+```bash
+# Generate runner token
+make token
+
+# Edit environment file
+sudo vi /etc/containers/systemd/.env
+```
+
+Environment variables:
 ```bash
 # Repository to register runners with
 REPO_URL=https://github.com/dantte-lp/ocserv-agent
 
-# Runner registration token (get with scripts/generate-token.sh)
+# Runner registration token (get with 'make token')
 RUNNER_TOKEN=your-token-here
 
 # Runner names (optional, defaults provided)
@@ -251,13 +278,15 @@ ORACLE_RUNNER_LABELS=self-hosted,linux,x64,oracle-linux,rpm-build,mock,podman
 RUNNER_GROUP=Default
 ```
 
+**Note:** The `.env` file is installed to `/etc/containers/systemd/.env` during `make install`. If you want to pre-configure it, edit `pods/shared/.env` before running `make install`.
+
 ### Get Runner Token
 
 ```bash
-# Using GitHub CLI (recommended)
-./scripts/generate-token.sh
+# Using Makefile (recommended)
+make token
 
-# Or manually
+# Or using GitHub CLI directly
 gh api --method POST /repos/dantte-lp/ocserv-agent/actions/runners/registration-token --jq '.token'
 ```
 
