@@ -1,0 +1,160 @@
+# Systemd Quadlet Container Unit for GitHub Actions Runner (Debian)
+# Location: /etc/containers/systemd/github-runner-debian.container
+#
+# This file defines a Podman container managed by systemd using quadlets.
+# See: https://docs.podman.io/en/latest/markdown/podman-systemd.unit.5.html
+#
+# Installation:
+#   sudo cp github-runner-debian.container /etc/containers/systemd/
+#   sudo systemctl daemon-reload
+#   sudo systemctl start github-runner-debian.service
+#   sudo systemctl enable github-runner-debian.service  # Auto-start on boot
+
+[Unit]
+Description=GitHub Actions Self-Hosted Runner (Debian Trixie)
+Documentation=https://github.com/dantte-lp/self-hosted-runners
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+# Container image (local build or registry)
+Image=localhost/github-runner-debian:latest
+
+# Container name
+ContainerName=github-runner-debian
+
+# Hostname inside container
+HostName=github-runner-debian
+
+# Auto-update container image
+# Options: registry, local, disabled
+AutoUpdate=disabled
+
+# Pull policy
+# Options: always, missing, never, newer
+Pull=missing
+
+# ════════════════════════════════════════════════════════════════════
+# Environment Variables
+# ════════════════════════════════════════════════════════════════════
+
+# Load environment from file (create this from env.example)
+EnvironmentFile=/opt/projects/repositories/self-hosted-runners/pods/shared/.env
+
+# Override specific variables (optional)
+Environment=RUNNER_NAME=debian-runner-ocserv-agent
+Environment=RUNNER_LABELS=self-hosted,linux,x64,debian,docker,security-scan,deb-build
+
+# Podman configuration for nested containers
+Environment=BUILDAH_ISOLATION=chroot
+Environment=STORAGE_DRIVER=vfs
+
+# ════════════════════════════════════════════════════════════════════
+# Volumes and Mounts
+# ════════════════════════════════════════════════════════════════════
+
+# Mount project directory for builds (read-write)
+Volume=/opt/projects/repositories:/workspace:rw,z
+
+# Mount Podman socket for Docker-in-Docker compatibility
+# This allows GitHub Actions to run container actions
+Volume=/run/podman/podman.sock:/var/run/docker.sock:rw
+
+# Optional: Mount specific directories
+# Volume=/var/cache/ocserv-agent-builds:/cache:rw,z
+
+# ════════════════════════════════════════════════════════════════════
+# Networking
+# ════════════════════════════════════════════════════════════════════
+
+# Network mode
+# Options: bridge, host, none, container:name, ns:path
+Network=bridge
+
+# Publish ports (if needed)
+# PublishPort=8080:8080
+
+# ════════════════════════════════════════════════════════════════════
+# Security and Capabilities
+# ════════════════════════════════════════════════════════════════════
+
+# Security options
+# Disable SELinux confinement (required for Docker-in-Docker)
+SecurityLabelDisable=true
+
+# Add capabilities (required for container builds)
+# AddCapability=SYS_ADMIN
+# AddCapability=MKNOD
+
+# User namespace mode
+# Options: auto, host, keep-id, nomap, container:id
+UserNS=auto
+
+# ════════════════════════════════════════════════════════════════════
+# Resource Limits
+# ════════════════════════════════════════════════════════════════════
+
+# CPU quota (percentage of one CPU core, e.g., 400% = 4 cores)
+# Limit to 4 cores max for this runner
+# CPUQuota=400%
+
+# Memory limit (recommended: 8GB for builds with security scanning)
+# Memory=8G
+# MemorySwap=8G
+
+# ════════════════════════════════════════════════════════════════════
+# Logging
+# ════════════════════════════════════════════════════════════════════
+
+# Log driver
+# Options: journald, k8s-file, json-file, none
+LogDriver=journald
+
+# ════════════════════════════════════════════════════════════════════
+# Runtime Options
+# ════════════════════════════════════════════════════════════════════
+
+# Timezone
+Timezone=local
+
+# Tmpfs mounts (for temporary build files)
+Tmpfs=/tmp:rw,noexec,nosuid,size=2G
+
+# ════════════════════════════════════════════════════════════════════
+# Systemd Integration
+# ════════════════════════════════════════════════════════════════════
+
+# Notify systemd when container is ready
+# Notify=healthy
+
+# Health check (check if runner is responsive)
+# HealthCmd=/bin/sh -c "test -f /home/runner/.runner"
+# HealthInterval=30s
+# HealthTimeout=10s
+# HealthRetries=3
+
+[Service]
+# Restart policy
+Restart=always
+RestartSec=10s
+
+# Timeout for start/stop operations
+TimeoutStartSec=300
+TimeoutStopSec=60
+
+# ════════════════════════════════════════════════════════════════════
+# Resource Limits (Systemd Level)
+# ════════════════════════════════════════════════════════════════════
+
+# CPU quota (systemd manages this)
+# CPUQuota=400%
+
+# Memory limits (systemd manages this)
+# MemoryMax=8G
+# MemoryHigh=7G
+
+# IO weight (100 = default, 10-1000 range)
+# IOWeight=100
+
+[Install]
+WantedBy=multi-user.target default.target
