@@ -118,54 +118,48 @@ RUN curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* /root/.dotnet
 
 # ============================================================================
-# Install GraalVM for JDK 25 (includes JDK + Native Image support)
-# https://www.graalvm.org/latest/getting-started/linux/
+# Install SDKMAN and JVM tools (https://sdkman.io/)
+# Manages Java, Gradle, Maven, Kotlin, Scala, and more
 # ============================================================================
-ARG GRAALVM_VERSION="25.0.1"
-RUN curl -fsSL -o graalvm.tar.gz \
-        https://download.oracle.com/graalvm/25/latest/graalvm-jdk-25_linux-x64_bin.tar.gz && \
-    mkdir -p /opt/graalvm && \
-    tar -xzf graalvm.tar.gz -C /opt/graalvm --strip-components=1 && \
-    rm graalvm.tar.gz && \
-    # Clean GraalVM unnecessary files to reduce size
-    rm -rf /opt/graalvm/man \
-           /opt/graalvm/legal \
-           /opt/graalvm/lib/src.zip \
+
+# Install SDKMAN
+RUN curl -s "https://get.sdkman.io" | bash && \
+    bash -c "source /root/.sdkman/bin/sdkman-init.sh && \
+    # Install GraalVM JDK 25 (includes Native Image support)
+    sdk install java 25.0.1-graal && \
+    # Install latest Gradle and Maven
+    sdk install gradle 9.1.0 && \
+    sdk install maven 3.9.11 && \
+    # Install JVM languages for universal image
+    sdk install kotlin 2.2.21 && \
+    sdk install scala 3.7.3 && \
+    # Install modern frameworks
+    sdk install springboot 3.5.7 && \
+    sdk install micronaut 4.10.0 && \
+    # Install JBang for Java scripting
+    sdk install jbang 0.132.1 && \
+    # Clean SDKMAN cache
+    sdk flush archives && \
+    sdk flush temp" && \
+    # Remove unnecessary files to reduce image size
+    rm -rf /root/.sdkman/archives/* \
+           /root/.sdkman/tmp/* \
            /tmp/* /var/tmp/*
 
-ENV GRAALVM_HOME=/opt/graalvm
-ENV JAVA_HOME=/opt/graalvm
-ENV PATH="${GRAALVM_HOME}/bin:${PATH}"
+# Set up environment for SDKMAN
+ENV SDKMAN_DIR="/root/.sdkman"
+ENV JAVA_HOME="/root/.sdkman/candidates/java/current"
+ENV GRADLE_HOME="/root/.sdkman/candidates/gradle/current"
+ENV M2_HOME="/root/.sdkman/candidates/maven/current"
+ENV PATH="${JAVA_HOME}/bin:${GRADLE_HOME}/bin:${M2_HOME}/bin:${PATH}"
 
-# Note: Native Image is included by default in GraalVM 25+
-
-# Install Maven and Gradle from official sources (avoid apt bloat)
-# Latest versions from https://github.com/apache/maven and https://github.com/gradle/gradle
-ARG GRADLE_VERSION="9.1.0"
-ARG MAVEN_VERSION="3.9.11"
-
-# Install Maven from Apache (avoid dependency bloat from apt)
-RUN curl -fsSL -o maven.tar.gz \
-        https://archive.apache.org/dist/maven/maven-3/${MAVEN_VERSION}/binaries/apache-maven-${MAVEN_VERSION}-bin.tar.gz && \
-    tar -xzf maven.tar.gz -C /opt && \
-    mv /opt/apache-maven-${MAVEN_VERSION} /opt/maven && \
-    rm maven.tar.gz && \
-    ln -s /opt/maven/bin/mvn /usr/local/bin/mvn && \
-    # Install Gradle from gradle.org
-    curl -fsSL -o gradle.zip \
-        https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip && \
-    unzip -q gradle.zip -d /opt && \
-    rm gradle.zip && \
-    mv /opt/gradle-${GRADLE_VERSION} /opt/gradle && \
-    # Remove docs and samples to reduce size
-    rm -rf /opt/gradle/docs \
-           /opt/gradle/samples && \
-    ln -s /opt/gradle/bin/gradle /usr/local/bin/gradle && \
-    rm -rf /tmp/* /var/tmp/*
-
-ENV M2_HOME=/opt/maven
-ENV GRADLE_HOME=/opt/gradle
-ENV PATH="${M2_HOME}/bin:${GRADLE_HOME}/bin:${PATH}"
+# Verify SDKMAN installations work
+RUN bash -c "source /root/.sdkman/bin/sdkman-init.sh && \
+    java -version && \
+    gradle --version && \
+    mvn --version && \
+    kotlin -version && \
+    scala -version"
 
 # ============================================================================
 # Install static analysis and security tools

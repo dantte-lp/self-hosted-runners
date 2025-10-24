@@ -376,12 +376,23 @@ The project has been optimized to reduce image sizes significantly:
    - GraalVM (kept for universal testing)
    - Java tools (kept for universal testing)
 
-### Expected Size Reduction
+### Actual Image Sizes
 
-| Component | Before | After | Savings |
-|-----------|--------|-------|---------|
-| Debian Runner | ~10GB | ~7-8GB | ~20-30% |
-| Oracle Runner | ~8GB | ~5-6GB | ~25-35% |
+| Component | Size | Notes |
+|-----------|------|-------|
+| Debian Runner | 7.92 GB | Includes 8 JVM SDKs via SDKMAN (Java 25, Gradle, Maven, Kotlin, Scala, SpringBoot, Micronaut, JBang) |
+| Oracle Runner | 8.12 GB | Includes 8 JVM SDKs via SDKMAN (Java 25, Gradle, Maven, Kotlin, Scala, SpringBoot, Micronaut, JBang) |
+
+### SDKMAN Integration
+
+Both runners now use SDKMAN for JVM tools management, providing:
+- **GraalVM JDK 25.0.1** with Native Image support
+- **Gradle 9.1.0** and **Maven 3.9.11** for build automation
+- **Kotlin 2.2.21** and **Scala 3.7.3** for JVM language development
+- **SpringBoot 3.5.7** and **Micronaut 4.10.0** for modern frameworks
+- **JBang 0.132.1** for Java scripting
+
+SDKMAN adds only ~240 MB for 8 complete SDKs, making it an efficient solution for JVM tool management.
 
 ## Troubleshooting
 

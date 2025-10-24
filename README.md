@@ -189,15 +189,16 @@ See [docs/CONTAINERS-TOOLKIT.md](docs/CONTAINERS-TOOLKIT.md) for usage examples.
 ### Image Size Optimization ⭐ NEW
 
 Optimized Containerfiles for smaller image sizes:
-- **Debian Runner**: Reduced from ~10GB to ~7-8GB (~20-30% savings)
-- **Oracle Runner**: Reduced from ~8GB to ~5-6GB (~25-35% savings)
+- **Debian Runner**: 7.92 GB (includes 8 JVM SDKs via SDKMAN)
+- **Oracle Runner**: 8.12 GB (includes 8 JVM SDKs via SDKMAN)
 
 Optimizations include:
 - Combined RUN commands to reduce layers
-- Aggressive cache cleaning (apt, dnf, npm, go, pip)
+- Aggressive cache cleaning (apt, dnf, npm, go, pip, SDKMAN)
 - Removed unnecessary documentation and source files
 - Use of `--no-install-recommends` flag
 - Cleaned up temporary files in each layer
+- SDKMAN cache flushing (`sdk flush archives && sdk flush temp`)
 
 ### Security Tools (Pre-installed)
 
@@ -212,13 +213,15 @@ Both runners include:
 ### Build Tools
 
 **github-runner-debian**:
-- Python 3.14, Go 1.25, protoc 33.0
+- Python 3.14, Go 1.25, protoc 33.0, Node.js 25, .NET SDK 8.0
+- **JVM Tools (via SDKMAN 🆕)**: GraalVM JDK 25.0.1, Gradle 9.1.0, Maven 3.9.11, Kotlin 2.2.21, Scala 3.7.3, SpringBoot 3.5.7, Micronaut 4.10.0, JBang 0.132.1
 - debootstrap for clean DEB builds
 - Docker/Podman support
 - golangci-lint, markdownlint, yamllint, hadolint
 
 **github-runner-oracle**:
-- Go 1.25, protoc 33.0
+- Go 1.25, protoc 33.0, Node.js 25, .NET SDK 8.0
+- **JVM Tools (via SDKMAN 🆕)**: GraalVM JDK 25.0.1, Gradle 9.1.0, Maven 3.9.11, Kotlin 2.2.21, Scala 3.7.3, SpringBoot 3.5.7, Micronaut 4.10.0, JBang 0.132.1
 - mock for clean RPM builds (EL8/9/10)
 - RPM development tools
 - SELinux policy tools
