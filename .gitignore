@@ -1,0 +1,32 @@
+# Environment
+.env
+*.env
+!.env.example
+
+# Logs
+*.log
+logs/
+
+# Podman/Pod generated files
+*.pid
+*.sock
+
+# Backup files
+*~
+*.bak
+*.swp
+
+# IDE
+.vscode/
+.idea/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Security
+certs/
+*.key
+*.pem
+*.crt
