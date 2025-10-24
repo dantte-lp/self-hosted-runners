@@ -109,8 +109,44 @@ RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@latest && \
 ENV PATH="${GOPATH}/bin:${PATH}"
 
 # ============================================================================
-# Install Go static analysis and security tools
+# Install Node.js 25 (from NodeSource)
 # ============================================================================
+RUN curl -fsSL https://rpm.nodesource.com/setup_25.x | bash - && \
+    dnf install -y nodejs && \
+    npm install -g npm@latest yarn pnpm && \
+    dnf clean all
+
+# ============================================================================
+# Install GraalVM for JDK 25 (includes JDK + Native Image support)
+# ============================================================================
+ARG GRAALVM_VERSION="25.0.1"
+RUN curl -fsSL -o graalvm.tar.gz \
+        https://download.oracle.com/graalvm/25/latest/graalvm-jdk-25_linux-x64_bin.tar.gz && \
+    mkdir -p /opt/graalvm && \
+    tar -xzf graalvm.tar.gz -C /opt/graalvm --strip-components=1 && \
+    rm graalvm.tar.gz
+
+ENV GRAALVM_HOME=/opt/graalvm
+ENV JAVA_HOME=/opt/graalvm
+ENV PATH="${GRAALVM_HOME}/bin:${PATH}"
+
+# Install Maven and Gradle
+RUN dnf install -y maven && \
+    dnf clean all
+
+# Install Gradle manually (DNF version may be outdated)
+ARG GRADLE_VERSION="8.5"
+RUN curl -fsSL -o gradle.zip \
+        https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip && \
+    unzip gradle.zip -d /opt && \
+    rm gradle.zip && \
+    ln -s /opt/gradle-${GRADLE_VERSION}/bin/gradle /usr/local/bin/gradle
+
+# ============================================================================
+# Install static analysis and security tools
+# ============================================================================
+
+# Go tools (install globally in GOPATH)
 # SAST & Code Quality
 RUN go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest && \
     go install honnef.co/go/tools/cmd/staticcheck@latest && \
@@ -123,8 +159,74 @@ RUN go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest && \
     go install github.com/sonatype-nexus-community/nancy@latest && \
     go install github.com/google/go-licenses@latest
 
+# Python tools (CLI tools installed globally)
+RUN pip3 install --no-cache-dir \
+        pylint \
+        flake8 \
+        black \
+        mypy \
+        bandit \
+        safety \
+        isort \
+        ruff
+
+# C/C++ tools
+RUN dnf install -y \
+        cppcheck \
+        clang-tools-extra \
+    && dnf clean all
+
+# JavaScript/TypeScript tools (global npm packages)
+RUN npm install -g \
+    eslint \
+    prettier \
+    typescript \
+    @typescript-eslint/parser \
+    @typescript-eslint/eslint-plugin
+
+# Java tools (download standalone versions)
+ARG CHECKSTYLE_VERSION="12.1.0"
+ARG PMD_VERSION="7.17.0"
+ARG SPOTBUGS_VERSION="4.9.8"
+
+RUN mkdir -p /opt/java-tools && \
+    # Checkstyle
+    curl -fsSL -o /opt/java-tools/checkstyle.jar \
+        https://github.com/checkstyle/checkstyle/releases/download/checkstyle-${CHECKSTYLE_VERSION}/checkstyle-${CHECKSTYLE_VERSION}-all.jar && \
+    # PMD
+    curl -fsSL -o pmd.zip \
+        https://github.com/pmd/pmd/releases/download/pmd_releases%2F${PMD_VERSION}/pmd-dist-${PMD_VERSION}-bin.zip && \
+    unzip pmd.zip -d /opt/java-tools && \
+    mv /opt/java-tools/pmd-bin-${PMD_VERSION} /opt/java-tools/pmd && \
+    rm pmd.zip && \
+    # SpotBugs
+    curl -fsSL -o spotbugs.tgz \
+        https://github.com/spotbugs/spotbugs/releases/download/${SPOTBUGS_VERSION}/spotbugs-${SPOTBUGS_VERSION}.tgz && \
+    tar -xzf spotbugs.tgz -C /opt/java-tools && \
+    mv /opt/java-tools/spotbugs-${SPOTBUGS_VERSION} /opt/java-tools/spotbugs && \
+    rm spotbugs.tgz && \
+    # Create wrapper scripts
+    echo '#!/bin/bash\njava -jar /opt/java-tools/checkstyle.jar "$@"' > /usr/local/bin/checkstyle && \
+    chmod +x /usr/local/bin/checkstyle
+
+ENV PATH="/opt/java-tools/pmd/bin:/opt/java-tools/spotbugs/bin:${PATH}"
+
+# Universal tools
+RUN dnf install -y \
+        yamllint \
+        ShellCheck \
+    && dnf clean all
+
+# Install hadolint (Dockerfile linter)
+RUN curl -fsSL -o /usr/local/bin/hadolint \
+    https://github.com/hadolint/hadolint/releases/download/v2.14.0/hadolint-Linux-x86_64 && \
+    chmod +x /usr/local/bin/hadolint
+
+# Install markdownlint-cli
+RUN npm install -g markdownlint-cli
+
 # ============================================================================
-# Install mock (for RPM builds)
+# Install mock (for RPM builds - platform-specific)
 # ============================================================================
 RUN dnf install -y mock && \
     dnf clean all
