@@ -1,0 +1,87 @@
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: github-runner-oracle
+  labels:
+    app: github-runner
+    runner: oracle
+    environment: production
+spec:
+  restartPolicy: Always
+
+  containers:
+  - name: github-runner-oracle
+    image: localhost/github-runner-oracle:latest
+    imagePullPolicy: Never
+
+    # Environment variables
+    envFrom:
+    - configMapRef:
+        name: runner-config
+        optional: true
+
+    env:
+    - name: RUNNER_NAME
+      value: "oraclelinux-runner-ocserv-agent"
+    - name: RUNNER_LABELS
+      value: "self-hosted,linux,x64,oracle-linux,rpm-build,mock,podman,el10"
+    - name: BUILDAH_ISOLATION
+      value: "chroot"
+    - name: STORAGE_DRIVER
+      value: "vfs"
+
+    # Volume mounts
+    volumeMounts:
+    - name: workspace
+      mountPath: /workspace
+    - name: podman-socket
+      mountPath: /run/podman/podman.sock
+    - name: mock-cache
+      mountPath: /var/cache/mock
+
+    # Security context
+    securityContext:
+      privileged: false
+      runAsUser: 1000
+      runAsGroup: 1000
+      capabilities:
+        add:
+        - SYS_ADMIN  # Required for mock builds
+        - MKNOD
+        drop:
+        - NET_RAW
+
+    # Resources (optional but recommended)
+    resources:
+      requests:
+        memory: "4Gi"
+        cpu: "2000m"
+      limits:
+        memory: "8Gi"
+        cpu: "4000m"
+
+  # Volumes
+  volumes:
+  - name: workspace
+    hostPath:
+      path: /opt/projects/repositories
+      type: Directory
+  - name: podman-socket
+    hostPath:
+      path: /run/podman/podman.sock
+      type: Socket
+  - name: mock-cache
+    hostPath:
+      path: /var/cache/mock
+      type: DirectoryOrCreate
+
+---
+# ConfigMap for shared runner configuration (same as debian)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: runner-config
+data:
+  REPO_URL: "https://github.com/dantte-lp/ocserv-agent"
+  RUNNER_GROUP: "Default"

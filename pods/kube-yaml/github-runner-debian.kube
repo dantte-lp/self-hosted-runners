@@ -1,0 +1,49 @@
+# Quadlet Kube Unit for GitHub Actions Runner (Debian)
+# Location: /etc/containers/systemd/github-runner-debian.kube
+#
+# This file tells Quadlet to run a Kubernetes YAML file with Podman
+# See: https://docs.podman.io/en/latest/markdown/podman-systemd.unit.5.html
+#
+# Installation:
+#   sudo mkdir -p /etc/containers/systemd
+#   sudo cp github-runner-debian.kube /etc/containers/systemd/
+#   sudo cp github-runner-debian.yaml /etc/containers/systemd/
+#   sudo systemctl daemon-reload
+#   sudo systemctl start github-runner-debian.service
+
+[Unit]
+Description=GitHub Actions Self-Hosted Runner (Debian) - Kubernetes YAML
+Documentation=https://github.com/dantte-lp/self-hosted-runners
+After=network-online.target
+Wants=network-online.target
+
+[Kube]
+# Path to Kubernetes YAML file
+Yaml=/etc/containers/systemd/github-runner-debian.yaml
+
+# ConfigMap for environment variables (optional)
+# ConfigMap=/etc/containers/systemd/runner-config.yaml
+
+# Set log driver
+LogDriver=journald
+
+# Pull policy for images
+# Options: always, missing, never, newer
+PullPolicy=never
+
+[Service]
+# Restart policy
+Restart=always
+RestartSec=10s
+
+# Timeout for start/stop operations
+TimeoutStartSec=300
+TimeoutStopSec=60
+
+# Resource limits (systemd level)
+# CPUQuota=400%
+# MemoryMax=8G
+# MemoryHigh=7G
+
+[Install]
+WantedBy=multi-user.target default.target

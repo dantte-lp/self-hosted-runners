@@ -7,7 +7,7 @@ FROM python:3.14-trixie
 # ============================================================================
 # Install base dependencies and Docker
 # ============================================================================
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
         # Base tools
         curl \
         git \
@@ -29,18 +29,14 @@ RUN apt-get update && apt-get install -y \
         automake \
         libtool \
         m4 \
-        # Дополнительные C/C++ инструменты
+        # Дополнительные C/C++ инструменты (только необходимые)
         gdb \
-        valgrind \
         strace \
         # Docker for container actions
         docker.io \
         # Network tools
         iputils-ping \
         openssh-client \
-        # Text editors
-        vim \
-        nano \
         # Development libraries
         libssl-dev \
         libcurl4-openssl-dev \
@@ -66,21 +62,25 @@ RUN apt-get update && apt-get install -y \
         dh-make \
         lintian \
         debootstrap \
-    && rm -rf /var/lib/apt/lists/*
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # ============================================================================
 # Install Poetry 2.2
 # ============================================================================
 RUN curl -sSL https://install.python-poetry.org | python3 - && \
-    ln -s /root/.local/bin/poetry /usr/local/bin/poetry
+    ln -s /root/.local/bin/poetry /usr/local/bin/poetry && \
+    rm -rf /tmp/* /root/.cache/*
 
 # ============================================================================
 # Install Node.js 25 (from NodeSource)
 # ============================================================================
 RUN curl -fsSL https://deb.nodesource.com/setup_25.x | bash - && \
-    apt-get install -y nodejs && \
+    apt-get install -y --no-install-recommends nodejs && \
     npm install -g npm@latest yarn pnpm && \
-    rm -rf /var/lib/apt/lists/*
+    npm cache clean --force && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* /root/.npm
 
 # ============================================================================
 # Install Go 1.25.1
@@ -113,8 +113,9 @@ ENV PATH="${GOPATH}/bin:${PATH}"
 RUN curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg && \
     echo "deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/debian/12/prod bookworm main" > /etc/apt/sources.list.d/microsoft-prod.list && \
     apt-get update && \
-    apt-get install -y dotnet-sdk-8.0 && \
-    rm -rf /var/lib/apt/lists/*
+    apt-get install -y --no-install-recommends dotnet-sdk-8.0 && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* /root/.dotnet
 
 # ============================================================================
 # Install GraalVM for JDK 25 (includes JDK + Native Image support)
@@ -125,20 +126,25 @@ RUN curl -fsSL -o graalvm.tar.gz \
         https://download.oracle.com/graalvm/25/latest/graalvm-jdk-25_linux-x64_bin.tar.gz && \
     mkdir -p /opt/graalvm && \
     tar -xzf graalvm.tar.gz -C /opt/graalvm --strip-components=1 && \
-    rm graalvm.tar.gz
+    rm graalvm.tar.gz && \
+    # Clean GraalVM unnecessary files to reduce size
+    rm -rf /opt/graalvm/man \
+           /opt/graalvm/legal \
+           /opt/graalvm/lib/src.zip \
+           /tmp/* /var/tmp/*
 
 ENV GRAALVM_HOME=/opt/graalvm
 ENV JAVA_HOME=/opt/graalvm
 ENV PATH="${GRAALVM_HOME}/bin:${PATH}"
 
 # Note: Native Image is included by default in GraalVM 25+
-# https://www.graalvm.org/latest/reference-manual/native-image/
 
 # Install Maven and Gradle
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
         maven \
         gradle \
-    && rm -rf /var/lib/apt/lists/*
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # ============================================================================
 # Install static analysis and security tools
@@ -151,8 +157,10 @@ RUN go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest && \
     go install github.com/securego/gosec/v2/cmd/gosec@latest && \
     go install github.com/kisielk/errcheck@latest && \
     go install github.com/gordonklaus/ineffassign@latest && \
-# Vulnerability & Dependency Scanning
-    go install golang.org/x/vuln/cmd/govulncheck@latest
+    go install golang.org/x/vuln/cmd/govulncheck@latest && \
+    # Clean Go cache to reduce image size
+    go clean -cache && \
+    rm -rf /root/.cache/go-build /tmp/*
 
 # Python tools (CLI tools installed globally)
 RUN pip3 install --no-cache-dir \
@@ -163,13 +171,16 @@ RUN pip3 install --no-cache-dir \
         bandit \
         safety \
         isort \
-        ruff
+        ruff \
+    && rm -rf /root/.cache/pip
 
 # C/C++ tools
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
         cppcheck \
         clang-tidy \
-    && rm -rf /var/lib/apt/lists/*
+        valgrind \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # JavaScript/TypeScript tools (global npm packages)
 RUN npm install -g \
@@ -177,7 +188,9 @@ RUN npm install -g \
     prettier \
     typescript \
     @typescript-eslint/parser \
-    @typescript-eslint/eslint-plugin
+    @typescript-eslint/eslint-plugin \
+    && npm cache clean --force \
+    && rm -rf /root/.npm /tmp/*
 
 # Java tools (download standalone versions)
 ARG CHECKSTYLE_VERSION="12.1.0"
@@ -191,7 +204,7 @@ RUN mkdir -p /opt/java-tools && \
     # PMD
     curl -fsSL -o pmd.zip \
         https://github.com/pmd/pmd/releases/download/pmd_releases%2F${PMD_VERSION}/pmd-dist-${PMD_VERSION}-bin.zip && \
-    unzip pmd.zip -d /opt/java-tools && \
+    unzip -q pmd.zip -d /opt/java-tools && \
     mv /opt/java-tools/pmd-bin-${PMD_VERSION} /opt/java-tools/pmd && \
     rm pmd.zip && \
     # SpotBugs
@@ -200,81 +213,86 @@ RUN mkdir -p /opt/java-tools && \
     tar -xzf spotbugs.tgz -C /opt/java-tools && \
     mv /opt/java-tools/spotbugs-${SPOTBUGS_VERSION} /opt/java-tools/spotbugs && \
     rm spotbugs.tgz && \
+    # Remove unnecessary files to reduce size
+    rm -rf /opt/java-tools/pmd/docs \
+           /opt/java-tools/spotbugs/doc \
+           /tmp/* /var/tmp/* && \
     # Create wrapper scripts
     echo '#!/bin/bash\njava -jar /opt/java-tools/checkstyle.jar "$@"' > /usr/local/bin/checkstyle && \
     chmod +x /usr/local/bin/checkstyle
 
 ENV PATH="/opt/java-tools/pmd/bin:/opt/java-tools/spotbugs/bin:${PATH}"
 
-# Universal tools
-RUN apt-get update && apt-get install -y \
+# Universal tools and linters
+RUN apt-get update && apt-get install -y --no-install-recommends \
         yamllint \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install hadolint (Dockerfile linter)
-RUN curl -fsSL -o /usr/local/bin/hadolint \
-    https://github.com/hadolint/hadolint/releases/download/v2.14.0/hadolint-Linux-x86_64 && \
-    chmod +x /usr/local/bin/hadolint
-
-# Install markdownlint-cli
-RUN npm install -g markdownlint-cli
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* && \
+    # Install hadolint (Dockerfile linter)
+    curl -fsSL -o /usr/local/bin/hadolint \
+        https://github.com/hadolint/hadolint/releases/download/v2.14.0/hadolint-Linux-x86_64 && \
+    chmod +x /usr/local/bin/hadolint && \
+    # Install markdownlint-cli
+    npm install -g markdownlint-cli && \
+    npm cache clean --force && \
+    rm -rf /root/.npm /tmp/*
 
 # ============================================================================
 # Install security scanning and supply chain tools (OSSF/SLSA/SBOM)
 # ============================================================================
 
-# Install trivy (container/dependency security scanner)
-RUN curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
-
-# Install OSSF Scorecard v5.3.0 (project security health metrics)
+# Define versions
 ARG SCORECARD_VERSION="5.3.0"
-RUN curl -fsSL -o scorecard.tar.gz \
+ARG SYFT_VERSION="v1.34.2"
+ARG GRYPE_VERSION="v0.101.1"
+ARG COSIGN_VERSION="v3.0.2"
+ARG GITLEAKS_VERSION="8.28.0"
+ARG TRUFFLEHOG_VERSION="3.90.3"
+
+# Install all security tools in one layer to reduce image size
+RUN set -eux && \
+    # Trivy (container/dependency security scanner)
+    curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin && \
+    # OSSF Scorecard (project security health metrics)
+    curl -fsSL -o scorecard.tar.gz \
         https://github.com/ossf/scorecard/releases/download/v${SCORECARD_VERSION}/scorecard_${SCORECARD_VERSION}_linux_amd64.tar.gz && \
     tar -xzf scorecard.tar.gz -C /usr/local/bin scorecard && \
     rm scorecard.tar.gz && \
-    chmod +x /usr/local/bin/scorecard
-
-# Install OSV-Scanner v2 (Google's vulnerability scanner)
-RUN go install github.com/google/osv-scanner/v2/cmd/osv-scanner@latest
-
-# Install Nancy (OSS Index dependency scanner for Go)
-RUN go install github.com/sonatype-nexus-community/nancy@latest
-
-# Install go-licenses (Go license compliance tool)
-RUN go install github.com/google/go-licenses@latest
-
-# Install Syft (SBOM generation tool from Anchore)
-ARG SYFT_VERSION="v1.34.2"
-RUN curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin ${SYFT_VERSION}
-
-# Install Grype (vulnerability scanner for containers and filesystems)
-ARG GRYPE_VERSION="v0.101.1"
-RUN curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin ${GRYPE_VERSION}
-
-# Install Cosign (container signing and verification from Sigstore)
-ARG COSIGN_VERSION="v3.0.2"
-RUN curl -fsSL -o /usr/local/bin/cosign \
+    chmod +x /usr/local/bin/scorecard && \
+    # Syft (SBOM generation tool)
+    curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin ${SYFT_VERSION} && \
+    # Grype (vulnerability scanner)
+    curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin ${GRYPE_VERSION} && \
+    # Cosign (container signing)
+    curl -fsSL -o /usr/local/bin/cosign \
         https://github.com/sigstore/cosign/releases/download/${COSIGN_VERSION}/cosign-linux-amd64 && \
-    chmod +x /usr/local/bin/cosign
-
-# Install Gitleaks (secrets detection - fast and lightweight)
-ARG GITLEAKS_VERSION="8.28.0"
-RUN curl -fsSL -o gitleaks.tar.gz \
+    chmod +x /usr/local/bin/cosign && \
+    # Gitleaks (secrets detection)
+    curl -fsSL -o gitleaks.tar.gz \
         https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz && \
     tar -xzf gitleaks.tar.gz -C /usr/local/bin gitleaks && \
     rm gitleaks.tar.gz && \
-    chmod +x /usr/local/bin/gitleaks
-
-# Install TruffleHog (secrets detection - comprehensive with verification)
-ARG TRUFFLEHOG_VERSION="3.90.3"
-RUN curl -fsSL -o trufflehog.tar.gz \
+    chmod +x /usr/local/bin/gitleaks && \
+    # TruffleHog (secrets detection with verification)
+    curl -fsSL -o trufflehog.tar.gz \
         https://github.com/trufflesecurity/trufflehog/releases/download/v${TRUFFLEHOG_VERSION}/trufflehog_${TRUFFLEHOG_VERSION}_linux_amd64.tar.gz && \
     tar -xzf trufflehog.tar.gz -C /usr/local/bin trufflehog && \
     rm trufflehog.tar.gz && \
-    chmod +x /usr/local/bin/trufflehog
+    chmod +x /usr/local/bin/trufflehog && \
+    # Clean up
+    rm -rf /tmp/* /var/tmp/*
+
+# Install Go-based security tools
+RUN go install github.com/google/osv-scanner/v2/cmd/osv-scanner@latest && \
+    go install github.com/sonatype-nexus-community/nancy@latest && \
+    go install github.com/google/go-licenses@latest && \
+    # Clean Go cache to reduce image size
+    go clean -cache -modcache && \
+    rm -rf /root/.cache/go-build
 
 # Install Semgrep (multi-language SAST tool)
-RUN pip3 install --no-cache-dir semgrep
+RUN pip3 install --no-cache-dir semgrep && \
+    rm -rf /root/.cache/pip
 
 # ============================================================================
 # Create runner user
@@ -299,17 +317,15 @@ RUN curl -o actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz \
     rm actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz
 
 # Install runner dependencies
-RUN cd /home/runner && ./bin/installdependencies.sh
+RUN cd /home/runner && ./bin/installdependencies.sh && \
+    # Clean up after installation
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
-# Fix GOPATH permissions for go install commands
-RUN mkdir -p /go/pkg/mod/cache && \
-    chown -R runner:runner /go && \
-    chmod -R 755 /go
-
-# Create work directory with correct permissions
-RUN mkdir -p /home/runner/_work && \
-    chown -R runner:runner /home/runner && \
-    chmod -R 755 /home/runner/_work
+# Fix GOPATH permissions for go install commands and create work directory
+RUN mkdir -p /go/pkg/mod/cache /home/runner/_work && \
+    chown -R runner:runner /go /home/runner && \
+    chmod -R 755 /go /home/runner/_work
 
 # ============================================================================
 # Configure runner environment
