@@ -119,7 +119,8 @@ LogDriver=journald
 Timezone=local
 
 # Tmpfs mounts (for temporary build files)
-Tmpfs=/tmp:rw,noexec,nosuid,size=2G
+# Note: noexec removed to allow Go test execution
+Tmpfs=/tmp:rw,nosuid,size=2G
 
 # ════════════════════════════════════════════════════════════════════
 # Systemd Integration

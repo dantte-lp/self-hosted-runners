@@ -119,7 +119,8 @@ LogDriver=journald
 Timezone=local
 
 # Tmpfs mounts (for temporary build files - mock uses a lot of tmpfs)
-Tmpfs=/tmp:rw,noexec,nosuid,size=4G
+# Note: noexec removed to allow Go test execution
+Tmpfs=/tmp:rw,nosuid,size=4G
 
 # ════════════════════════════════════════════════════════════════════
 # Systemd Integration
