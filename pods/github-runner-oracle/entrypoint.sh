@@ -2,10 +2,11 @@
 set -e
 
 # Configuration
+# Use Oracle-specific variables if available, otherwise fall back to generic ones
 REPO_URL="${REPO_URL:-https://github.com/dantte-lp/ocserv-agent}"
-RUNNER_NAME="${RUNNER_NAME:-oraclelinux-runner-ocserv-agent}"
-RUNNER_LABELS="${RUNNER_LABELS:-self-hosted,linux,x64,oracle-linux,rpm-build,mock,podman,el10}"
-RUNNER_GROUP="${RUNNER_GROUP:-Default}"
+RUNNER_NAME="${ORACLE_RUNNER_NAME:-${RUNNER_NAME:-oraclelinux-runner-ocserv-agent}}"
+RUNNER_LABELS="${ORACLE_RUNNER_LABELS:-${RUNNER_LABELS:-self-hosted,linux,x64,oracle-linux,rpm-build,mock,podman,el10}}"
+RUNNER_GROUP="${ORACLE_RUNNER_GROUP:-${RUNNER_GROUP:-Default}}"
 
 echo "🏃 GitHub Actions Self-Hosted Runner (Oracle Linux)"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

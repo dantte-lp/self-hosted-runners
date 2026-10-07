@@ -39,11 +39,8 @@ Pull=missing
 # ════════════════════════════════════════════════════════════════════
 
 # Load environment from file (installed by 'make install')
+# All RUNNER_* variables come from .env file
 EnvironmentFile=/etc/containers/systemd/.env
-
-# Override specific variables (optional)
-Environment=RUNNER_NAME=oraclelinux-runner-ocserv-agent
-Environment=RUNNER_LABELS=self-hosted,linux,x64,oracle-linux,rpm-build,mock,podman,el10
 
 # Podman configuration for nested containers
 Environment=BUILDAH_ISOLATION=chroot

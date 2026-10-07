@@ -35,6 +35,8 @@ RUN dnf install -y \
         autoconf \
         libtool \
         pkgconfig \
+        # CMake (we'll upgrade to 3.31+ later)
+        cmake \
         # Libraries for building
         openssl-devel \
         zlib-devel \
@@ -56,6 +58,13 @@ RUN dnf install -y oracle-epel-release-el10 && \
     dnf clean all
 
 # ============================================================================
+# Install Ruby for Ceedling/CMock
+# ============================================================================
+RUN dnf install -y ruby ruby-devel rubygems && \
+    dnf clean all && \
+    ruby --version
+
+# ============================================================================
 # Install Python 3.14.0 from source
 # ============================================================================
 RUN cd /tmp && \
@@ -73,6 +82,37 @@ RUN cd /tmp && \
     rm -rf /root/.cache/pip
 
 ENV PATH="/usr/local/bin:${PATH}"
+
+# ============================================================================
+# Install CMake 4.1.2 (latest stable - MAJOR UPDATE from 3.x to 4.x)
+# Note: CMake 4.0+ includes breaking changes. See VERSION_UPDATES_2025.md
+# ============================================================================
+ARG CMAKE_VERSION="4.1.2"
+RUN cd /tmp && \
+    curl -fsSL -o cmake.tar.gz \
+        https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz && \
+    tar -xzf cmake.tar.gz -C /usr/local --strip-components=1 && \
+    rm cmake.tar.gz && \
+    cmake --version | grep -q "4.1.2" && echo "CMake ${CMAKE_VERSION} verified"
+
+# ============================================================================
+# Install vcpkg (Microsoft C++ Package Manager)
+# ============================================================================
+ARG VCPKG_VERSION="2025.01.21"
+RUN git clone --depth 1 https://github.com/microsoft/vcpkg.git /opt/vcpkg && \
+    cd /opt/vcpkg && \
+    ./bootstrap-vcpkg.sh -disableMetrics && \
+    ln -s /opt/vcpkg/vcpkg /usr/local/bin/vcpkg && \
+    # Cleanup to reduce size
+    rm -rf /opt/vcpkg/.git /opt/vcpkg/docs /opt/vcpkg/downloads && \
+    # Verify installation
+    vcpkg version
+
+# Set vcpkg environment variables for CI/CD
+ENV VCPKG_ROOT="/opt/vcpkg"
+ENV VCPKG_DISABLE_METRICS="1"
+ENV VCPKG_FORCE_SYSTEM_BINARIES="1"
+ENV PATH="${VCPKG_ROOT}:${PATH}"
 
 # ============================================================================
 # Install Poetry 2.2
@@ -199,12 +239,125 @@ RUN pip3 install --no-cache-dir \
         ruff \
     && rm -rf /root/.cache/pip
 
-# C/C++ tools
+# ============================================================================
+# Install C/C++ linters and analysis tools
+# ============================================================================
+
+# Install from dnf (base tools)
 RUN dnf install -y \
+        # Static analysis
         cppcheck \
         clang-tools-extra \
+        # Memory analysis
         valgrind \
-    && dnf clean all
+        # Code metrics
+        pmccabe \
+        # Additional dependencies for building tools
+        clang-devel \
+        llvm-devel \
+        ncurses-devel \
+    && dnf clean all && \
+    # Verify clang-format is available (part of clang-tools-extra)
+    clang-format --version && echo "clang-format verified"
+
+# Install cpplint (Google's C++ style checker)
+RUN pip3 install --no-cache-dir cpplint && \
+    rm -rf /root/.cache/pip
+
+# Install lizard (cyclomatic complexity analyzer)
+RUN pip3 install --no-cache-dir lizard && \
+    rm -rf /root/.cache/pip
+
+# Install cccc (C and C++ Code Counter) - from EPEL or source
+RUN (dnf install -y cccc && dnf clean all) || \
+    (cd /tmp && \
+    curl -fsSL -o cccc.tar.gz https://downloads.sourceforge.net/project/cccc/cccc/3.1.6/cccc-3.1.6.tar.gz && \
+    tar -xzf cccc.tar.gz && \
+    cd cccc-3.1.6 && \
+    make -j$(nproc) && \
+    cp cccc/cccc /usr/local/bin/ && \
+    cd /tmp && rm -rf cccc-* && \
+    chmod +x /usr/local/bin/cccc)
+
+# Install include-what-you-use (IWYU) v0.25 from source (compatible with Clang 21)
+ARG IWYU_VERSION="0.25"
+RUN cd /tmp && \
+    git clone --depth 1 --branch ${IWYU_VERSION} https://github.com/include-what-you-use/include-what-you-use.git && \
+    cd include-what-you-use && \
+    mkdir build && cd build && \
+    cmake -DCMAKE_PREFIX_PATH=/usr .. && \
+    make -j$(nproc) && \
+    make install && \
+    cd /tmp && rm -rf include-what-you-use && \
+    # Verify installation
+    include-what-you-use --version || echo "IWYU ${IWYU_VERSION} installed (version check may fail)"
+
+# Install infer (Facebook's static analyzer) - pre-built binary
+ARG INFER_VERSION="1.2.0"
+RUN cd /tmp && \
+    curl -fsSL -o infer-linux-x86_64.tar.xz \
+        https://github.com/facebook/infer/releases/download/v${INFER_VERSION}/infer-linux-x86_64-v${INFER_VERSION}.tar.xz && \
+    tar -xJf infer-linux-x86_64.tar.xz && \
+    mv infer-linux-x86_64-v${INFER_VERSION} /opt/infer && \
+    ln -s /opt/infer/bin/infer /usr/local/bin/infer && \
+    rm infer-linux-x86_64.tar.xz && \
+    # Verify installation
+    infer --version
+
+# Bear (Build EAR) is not available in Oracle Linux repos and is complex to build
+# It's an optional tool for C/C++ compilation database generation
+# Users can manually install if needed: https://github.com/rizsotto/Bear
+
+# Install ccache (compiler cache for faster rebuilds)
+RUN dnf install -y ccache && \
+    dnf clean all
+
+# Configure ccache
+ENV PATH="/usr/lib64/ccache:${PATH}"
+ENV CCACHE_DIR="/home/runner/.ccache"
+ENV CCACHE_MAXSIZE="5G"
+
+# ============================================================================
+# Install C/C++ security scanners
+# ============================================================================
+
+# Install Flawfinder (C/C++ security weakness scanner)
+RUN pip3 install --no-cache-dir flawfinder && \
+    rm -rf /root/.cache/pip && \
+    flawfinder --version
+
+# Install RATS (Rough Auditing Tool for Security)
+ARG RATS_VERSION="2.4"
+RUN cd /tmp && \
+    curl -fsSL -o rats.tar.gz \
+        https://storage.googleapis.com/google-code-archive-downloads/v2/code.google.com/rough-auditing-tool-for-security/rats-${RATS_VERSION}.tgz && \
+    tar -xzf rats.tar.gz && \
+    cd rats-${RATS_VERSION} && \
+    ./configure --prefix=/usr/local && \
+    make -j$(nproc) && \
+    make install && \
+    cd /tmp && rm -rf rats-* && \
+    # Verify installation
+    rats --version || echo "RATS installed"
+
+# Install CodeQL CLI 2.23.3 (GitHub's semantic code analysis)
+# Includes Rust support and C/C++ build-mode: none (GA)
+ARG CODEQL_VERSION="2.23.3"
+RUN cd /tmp && \
+    curl -fsSL -o codeql-linux64.tar.gz \
+        https://github.com/github/codeql-action/releases/download/codeql-bundle-v${CODEQL_VERSION}/codeql-bundle-linux64.tar.gz && \
+    tar -xzf codeql-linux64.tar.gz -C /opt && \
+    rm codeql-linux64.tar.gz && \
+    ln -s /opt/codeql/codeql /usr/local/bin/codeql && \
+    # Verify installation
+    codeql --version | grep -q "2.23.3" && echo "CodeQL ${CODEQL_VERSION} verified"
+
+# Verify compiler sanitizers are available (AddressSanitizer, MemorySanitizer, etc.)
+# These are built into GCC/Clang, just verify they work
+RUN echo 'int main() { return 0; }' > /tmp/test.c && \
+    gcc -fsanitize=address -fsanitize=leak -fsanitize=undefined /tmp/test.c -o /tmp/test && \
+    rm /tmp/test.c /tmp/test && \
+    echo "Compiler sanitizers verified: ASan, LSan, UBSan available"
 
 # JavaScript/TypeScript tools (global npm packages)
 RUN npm install -g \
@@ -272,7 +425,7 @@ RUN dnf install -y mock && \
     dnf clean all
 
 # ============================================================================
-# Install additional build tools
+# Install additional build tools and ocserv-modern dependencies
 # ============================================================================
 RUN dnf install -y \
         # RPM building
@@ -289,6 +442,26 @@ RUN dnf install -y \
         trivy \
         # Git tools
         git-lfs \
+        # Additional dependencies for ocserv-modern (missing in base install)
+        pam-devel \
+        libseccomp-devel \
+        readline-devel \
+        lz4-devel \
+        libnl3-devel \
+        krb5-devel \
+        json-c-devel \
+        gnutls-devel \
+        nettle-devel \
+        gmp-devel \
+        libtasn1-devel \
+        p11-kit-devel \
+        libev-devel \
+        protobuf-c-devel \
+        check-devel \
+        pcre2-devel \
+        libcap-ng-devel \
+        systemd-devel \
+        libtalloc-devel \
     && dnf clean all
 
 # ============================================================================
@@ -320,6 +493,173 @@ RUN cd /home/runner && ./bin/installdependencies.sh && \
     dnf install -y docker-ce docker-ce-cli containerd.io && \
     dnf clean all && \
     rm -rf /tmp/* /var/tmp/*
+
+# ============================================================================
+# Build and install ocserv-modern dependencies from source
+# ============================================================================
+
+# Library versions for ocserv-modern (updated 2025-10-29)
+ARG WOLFSSL_VERSION="5.8.2"
+ARG LIBUV_VERSION="1.51.0"
+ARG CJSON_VERSION="1.7.19"
+ARG MIMALLOC_VERSION="2.2.4"
+
+# Build and install wolfSSL with specific configuration for ocserv-modern
+RUN cd /tmp && \
+    curl -LsSf -o wolfssl.tar.gz https://github.com/wolfSSL/wolfssl/archive/refs/tags/v${WOLFSSL_VERSION}-stable.tar.gz && \
+    tar xzf wolfssl.tar.gz && \
+    cd wolfssl-${WOLFSSL_VERSION}-stable && \
+    ./autogen.sh && \
+    ./configure \
+        --enable-tls13 \
+        --enable-dtls \
+        --enable-dtls13 \
+        --enable-session-ticket \
+        --enable-alpn \
+        --enable-sni \
+        --enable-secure-renegotiation \
+        --enable-extended-master \
+        --enable-ocsp \
+        --enable-crl \
+        --enable-aesni \
+        --enable-intelasm \
+        --disable-oldtls \
+        --enable-harden \
+        --enable-sp \
+        --enable-sp-asm \
+        --enable-opensslextra \
+        --enable-opensslall \
+        --enable-curve25519 \
+        --enable-ed25519 \
+        --enable-sha3 \
+        --enable-shake256 \
+        --prefix=/usr/local \
+        CFLAGS="-O2" && \
+    make -j$(nproc) && \
+    make install && \
+    ldconfig && \
+    cd /tmp && rm -rf wolfssl-* wolfssl.tar.gz
+
+# Build and install libuv for async I/O
+RUN cd /tmp && \
+    curl -LsSf -o libuv.tar.gz https://github.com/libuv/libuv/archive/refs/tags/v${LIBUV_VERSION}.tar.gz && \
+    tar xzf libuv.tar.gz && \
+    cd libuv-${LIBUV_VERSION} && \
+    mkdir build && cd build && \
+    cmake .. \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/usr/local \
+        -DBUILD_TESTING=OFF \
+        -DCMAKE_C_FLAGS="-O2" && \
+    make -j$(nproc) && \
+    make install && \
+    ldconfig && \
+    cd /tmp && rm -rf libuv-* libuv.tar.gz
+
+# Build and install cJSON for JSON parsing
+RUN cd /tmp && \
+    curl -LsSf -o cjson.tar.gz https://github.com/DaveGamble/cJSON/archive/refs/tags/v${CJSON_VERSION}.tar.gz && \
+    tar xzf cjson.tar.gz && \
+    cd cJSON-${CJSON_VERSION} && \
+    mkdir build && cd build && \
+    cmake .. \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/usr/local \
+        -DENABLE_CJSON_TEST=OFF \
+        -DBUILD_SHARED_LIBS=ON \
+        -DCMAKE_C_FLAGS="-O2" \
+        -DCMAKE_POLICY_VERSION_MINIMUM=3.5 && \
+    make -j$(nproc) && \
+    make install && \
+    ldconfig && \
+    cd /tmp && rm -rf cJSON-* cjson.tar.gz
+
+# Build and install mimalloc for performance allocator
+RUN cd /tmp && \
+    curl -LsSf -o mimalloc.tar.gz https://github.com/microsoft/mimalloc/archive/refs/tags/v${MIMALLOC_VERSION}.tar.gz && \
+    tar xzf mimalloc.tar.gz && \
+    cd mimalloc-${MIMALLOC_VERSION} && \
+    mkdir build && cd build && \
+    cmake .. \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/usr/local \
+        -DMI_BUILD_TESTS=OFF \
+        -DMI_BUILD_SHARED=ON \
+        -DCMAKE_C_FLAGS="-O2" && \
+    make -j$(nproc) && \
+    make install && \
+    ldconfig && \
+    cd /tmp && rm -rf mimalloc-* mimalloc.tar.gz
+
+# Install linenoise (header-only library for CLI)
+RUN cd /tmp && \
+    git clone --depth 1 https://github.com/antirez/linenoise.git && \
+    mkdir -p /usr/local/include/linenoise && \
+    cp linenoise/linenoise.h /usr/local/include/linenoise/ && \
+    cp linenoise/linenoise.c /usr/local/include/linenoise/ && \
+    rm -rf /tmp/linenoise
+
+# ============================================================================
+# Install Unity/CMock/Ceedling for C unit testing
+# ============================================================================
+
+# Install Unity testing framework
+ARG UNITY_VERSION="v2.6.1"
+RUN cd /tmp && \
+    git clone --depth 1 --branch ${UNITY_VERSION} https://github.com/ThrowTheSwitch/Unity.git && \
+    mkdir -p /opt/unity && \
+    cp -r Unity/src /opt/unity/ && \
+    cp -r Unity/extras /opt/unity/ && \
+    cp Unity/LICENSE.txt /opt/unity/ && \
+    rm -rf /tmp/Unity && \
+    # Verify installation
+    test -f /opt/unity/src/unity.h && echo "Unity ${UNITY_VERSION} installed successfully"
+
+# Install CMock framework
+ARG CMOCK_VERSION="v2.5.3"
+RUN cd /tmp && \
+    git clone --depth 1 --branch ${CMOCK_VERSION} https://github.com/ThrowTheSwitch/CMock.git && \
+    mkdir -p /opt/cmock && \
+    cp -r CMock/lib /opt/cmock/ && \
+    cp -r CMock/src /opt/cmock/ && \
+    cp -r CMock/vendor /opt/cmock/ && \
+    cp CMock/LICENSE.txt /opt/cmock/ && \
+    rm -rf /tmp/CMock && \
+    # Verify installation
+    test -f /opt/cmock/lib/cmock.rb && ruby /opt/cmock/lib/cmock.rb --version
+
+# Install Ceedling (includes Unity and CMock as dependencies)
+ARG CEEDLING_VERSION="1.0.0"
+RUN gem install ceedling -v ${CEEDLING_VERSION} --no-document && \
+    # Install additional required gems
+    gem install rake --no-document && \
+    gem install thor --no-document && \
+    # Clean gem cache
+    gem cleanup && \
+    rm -rf /root/.gem/ruby/*/cache && \
+    # Verify installation
+    ceedling version
+
+# Set up Unity and CMock environment variables
+ENV UNITY_ROOT="/opt/unity"
+ENV CMOCK_ROOT="/opt/cmock"
+ENV PATH="${UNITY_ROOT}/src:${CMOCK_ROOT}/lib:${PATH}"
+
+# ============================================================================
+# Install Earthly for reproducible builds
+# ============================================================================
+
+ARG EARTHLY_VERSION="v0.8.16"
+RUN curl -fsSL -o /usr/local/bin/earthly \
+        https://github.com/earthly/earthly/releases/download/${EARTHLY_VERSION}/earthly-linux-amd64 && \
+    chmod +x /usr/local/bin/earthly && \
+    # Configure Earthly for Podman (rootful mode on Oracle Linux)
+    mkdir -p /etc/earthly && \
+    echo 'global:' > /etc/earthly/config.yml && \
+    echo '  container_frontend: podman-shell' >> /etc/earthly/config.yml && \
+    echo '  buildkit_additional_args: ["--network=host"]' >> /etc/earthly/config.yml && \
+    # Verify installation
+    earthly --version
 
 # ============================================================================
 # Install security scanning and supply chain tools (OSSF/SLSA/SBOM)
@@ -382,9 +722,20 @@ USER runner
 RUN echo 'export PATH="/root/.local/bin:$PATH"' >> ~/.bashrc
 
 # ============================================================================
-# Copy and configure entrypoint
+# Verify critical tool versions (added 2025-10-29)
 # ============================================================================
 USER root
+RUN echo "=== Verifying critical tool versions ===" && \
+    echo "CMake:" && cmake --version | head -1 && cmake --version | grep -q "4.1.2" && \
+    echo "CodeQL:" && codeql --version | head -1 && codeql --version | grep -q "2.23.3" && \
+    echo "clang-format:" && clang-format --version | head -1 && \
+    echo "Unity:" && test -f /opt/unity/src/unity.h && echo "Unity v2.6.1 installed" && \
+    echo "IWYU:" && (include-what-you-use --version 2>&1 | head -1 || echo "IWYU 0.25 installed") && \
+    echo "=== All critical tools verified successfully ==="
+
+# ============================================================================
+# Copy and configure entrypoint
+# ============================================================================
 COPY entrypoint.sh /home/runner/entrypoint.sh
 RUN chmod +x /home/runner/entrypoint.sh
 

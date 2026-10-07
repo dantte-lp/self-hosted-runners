@@ -2,10 +2,11 @@
 set -e
 
 # Configuration
+# Use Debian-specific variables if available, otherwise fall back to generic ones
 REPO_URL="${REPO_URL:-https://github.com/dantte-lp/ocserv-agent}"
-RUNNER_NAME="${RUNNER_NAME:-debian-runner-ocserv-agent}"
-RUNNER_LABELS="${RUNNER_LABELS:-self-hosted,linux,x64,debian,docker}"
-RUNNER_GROUP="${RUNNER_GROUP:-Default}"
+RUNNER_NAME="${DEBIAN_RUNNER_NAME:-${RUNNER_NAME:-debian-runner-ocserv-agent}}"
+RUNNER_LABELS="${DEBIAN_RUNNER_LABELS:-${RUNNER_LABELS:-self-hosted,linux,x64,debian,docker}}"
+RUNNER_GROUP="${DEBIAN_RUNNER_GROUP:-${RUNNER_GROUP:-Default}}"
 
 echo "🏃 GitHub Actions Self-Hosted Runner (Debian)"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

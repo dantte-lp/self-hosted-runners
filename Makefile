@@ -1,5 +1,6 @@
 .PHONY: help build install uninstall start stop restart status logs clean rebuild
 .PHONY: build-buildah build-multiarch inspect push pull validate-tools
+.PHONY: repo-list repo-show repo-activate repo-token repo-switch repo-reinstall repo-help
 
 # Default target
 .DEFAULT_GOAL := help
@@ -14,6 +15,8 @@ NC := \033[0m # No Color
 # Directories
 SYSTEMD_DIR := /etc/containers/systemd
 PODS_DIR := $(CURDIR)/pods
+SCRIPTS_DIR := $(CURDIR)/scripts
+CONFIG_DIR := $(CURDIR)/config
 
 # Build tool selection (podman or buildah)
 BUILD_TOOL ?= podman
@@ -46,6 +49,12 @@ help: ## Show this help message
 	@echo "  make build-multiarch     # Build for amd64 and arm64"
 	@echo "  make inspect             # Inspect images with Skopeo"
 	@echo "  make validate-tools      # Check available containers tools"
+	@echo ""
+	@echo -e "$(CYAN)Multi-Repository Management:$(NC)"
+	@echo "  make repo-help                 # Show detailed repository management help"
+	@echo "  make repo-list                 # List all configured repositories"
+	@echo "  make repo-switch REPO=<alias>  # Switch configuration (prepare only)"
+	@echo "  sudo make repo-reinstall REPO=<alias>  # Switch + reinstall + restart (full automation)"
 	@echo ""
 
 check-prereqs: ## Check system prerequisites
@@ -379,3 +388,197 @@ sync: ## Synchronize images between registries using Skopeo
 	skopeo sync --src docker --dest docker $(SRC_REGISTRY)/$(IMAGE_PREFIX)-debian:latest $(DST_REGISTRY)/$(IMAGE_PREFIX)-debian:latest
 	skopeo sync --src docker --dest docker $(SRC_REGISTRY)/$(IMAGE_PREFIX)-oracle:latest $(DST_REGISTRY)/$(IMAGE_PREFIX)-oracle:latest
 	@echo -e "$(GREEN)Sync complete!$(NC)"
+
+# ════════════════════════════════════════════════════════════════════
+# Multi-Repository Management
+# ════════════════════════════════════════════════════════════════════
+
+repo-help: ## Show repository management help
+	@echo -e "$(CYAN)════════════════════════════════════════════════════════════════════$(NC)"
+	@echo -e "$(CYAN)Multi-Repository Runner Management$(NC)"
+	@echo -e "$(CYAN)════════════════════════════════════════════════════════════════════$(NC)"
+	@echo ""
+	@echo -e "$(GREEN)Overview:$(NC)"
+	@echo "  Manage self-hosted runners across multiple GitHub repositories."
+	@echo "  Configure repositories in: $(CONFIG_DIR)/repositories.conf"
+	@echo ""
+	@echo -e "$(GREEN)Available Commands:$(NC)"
+	@echo "  $(CYAN)make repo-list$(NC)                         - List all configured repositories"
+	@echo "  $(CYAN)make repo-show REPO=<alias>$(NC)            - Show repository configuration"
+	@echo "  $(CYAN)make repo-activate REPO=<alias>$(NC)        - Activate a repository (generate .env)"
+	@echo "  $(CYAN)make repo-token REPO=<alias>$(NC)           - Generate token for a repository"
+	@echo "  $(CYAN)make repo-switch REPO=<alias>$(NC)          - Switch configuration (no restart)"
+	@echo "  $(CYAN)sudo make repo-reinstall REPO=<alias>$(NC)  - Full switch (stop + uninstall + install + start)"
+	@echo ""
+	@echo -e "$(GREEN)Quick Start - Add Runners to New Repository:$(NC)"
+	@echo "  1. Add repository to: $(CONFIG_DIR)/repositories.conf"
+	@echo "  2. Full automated switch:"
+	@echo "     $(CYAN)sudo make repo-reinstall REPO=ocserv-modern$(NC)"
+	@echo ""
+	@echo -e "$(GREEN)Example - Switch to ocserv-modern:$(NC)"
+	@echo "  $(CYAN)sudo make repo-reinstall REPO=ocserv-modern$(NC)"
+	@echo "  This will:"
+	@echo "    - Stop current runners"
+	@echo "    - Uninstall old configuration"
+	@echo "    - Generate new .env with token"
+	@echo "    - Install new configuration"
+	@echo "    - Start runners for new repository"
+	@echo ""
+	@echo -e "$(YELLOW)Manual workflow (advanced users):$(NC)"
+	@echo "  1. Prepare config: make repo-switch REPO=ocserv-modern"
+	@echo "  2. Stop runners: sudo make stop"
+	@echo "  3. Uninstall: sudo make uninstall"
+	@echo "  4. Install: sudo make install"
+	@echo "  5. Start: sudo make start"
+	@echo ""
+
+repo-list: ## List all configured repositories
+	@if [ ! -f "$(CONFIG_DIR)/repositories.conf" ]; then \
+		echo "$(RED)ERROR: Configuration file not found: $(CONFIG_DIR)/repositories.conf$(NC)"; \
+		exit 1; \
+	fi
+	@$(SCRIPTS_DIR)/repo-config.sh list
+
+repo-show: ## Show configuration for a specific repository (usage: make repo-show REPO=ocserv-modern)
+	@if [ -z "$(REPO)" ]; then \
+		echo "$(RED)ERROR: REPO parameter required$(NC)"; \
+		echo "Usage: make repo-show REPO=<alias>"; \
+		echo ""; \
+		echo "Available repositories:"; \
+		$(SCRIPTS_DIR)/repo-config.sh list; \
+		exit 1; \
+	fi
+	@$(SCRIPTS_DIR)/repo-config.sh show $(REPO)
+
+repo-activate: ## Activate a repository by generating .env file (usage: make repo-activate REPO=ocserv-modern)
+	@if [ -z "$(REPO)" ]; then \
+		echo "$(RED)ERROR: REPO parameter required$(NC)"; \
+		echo "Usage: make repo-activate REPO=<alias>"; \
+		echo ""; \
+		echo "Available repositories:"; \
+		$(SCRIPTS_DIR)/repo-config.sh list; \
+		exit 1; \
+	fi
+	@$(SCRIPTS_DIR)/repo-config.sh activate $(REPO)
+
+repo-token: ## Generate registration token for a repository (usage: make repo-token REPO=ocserv-modern)
+	@if [ -z "$(REPO)" ]; then \
+		echo "$(RED)ERROR: REPO parameter required$(NC)"; \
+		echo "Usage: make repo-token REPO=<alias>"; \
+		echo ""; \
+		echo "Available repositories:"; \
+		$(SCRIPTS_DIR)/repo-config.sh list; \
+		exit 1; \
+	fi
+	@$(SCRIPTS_DIR)/generate-token-multi.sh $(REPO)
+
+repo-switch: ## Switch to a different repository (activate + generate token + update .env)
+	@if [ -z "$(REPO)" ]; then \
+		echo "$(RED)ERROR: REPO parameter required$(NC)"; \
+		echo "Usage: make repo-switch REPO=<alias>"; \
+		echo ""; \
+		echo "Available repositories:"; \
+		$(SCRIPTS_DIR)/repo-config.sh list; \
+		exit 1; \
+	fi
+	@echo -e "$(CYAN)════════════════════════════════════════════════════════════════════$(NC)"
+	@echo -e "$(CYAN)Switching to Repository: $(YELLOW)$(REPO)$(NC)"
+	@echo -e "$(CYAN)════════════════════════════════════════════════════════════════════$(NC)"
+	@echo ""
+	@echo -e "$(YELLOW)Step 1/4:$(NC) Activating repository configuration..."
+	@$(SCRIPTS_DIR)/repo-config.sh activate $(REPO)
+	@echo ""
+	@echo -e "$(YELLOW)Step 2/4:$(NC) Generating registration token..."
+	@NEW_TOKEN=$$($(SCRIPTS_DIR)/generate-token-multi.sh $(REPO) 2>/dev/null | tail -n1); \
+	if [ -z "$$NEW_TOKEN" ]; then \
+		echo "$(RED)ERROR: Failed to generate token$(NC)"; \
+		exit 1; \
+	fi; \
+	echo -e "$(GREEN)✓ Token generated: $${NEW_TOKEN:0:15}...$(NC)"; \
+	echo ""; \
+	echo -e "$(YELLOW)Step 3/4:$(NC) Updating .env file..."; \
+	sed -i "s/^RUNNER_TOKEN=.*/RUNNER_TOKEN=$$NEW_TOKEN/" $(PODS_DIR)/shared/.env; \
+	echo -e "$(GREEN)✓ Token updated in .env$(NC)"; \
+	echo ""; \
+	echo -e "$(YELLOW)Step 4/4:$(NC) Ready for installation"; \
+	echo ""
+	@echo -e "$(CYAN)════════════════════════════════════════════════════════════════════$(NC)"
+	@echo -e "$(GREEN)✓ Repository switch complete!$(NC)"
+	@echo -e "$(CYAN)════════════════════════════════════════════════════════════════════$(NC)"
+	@echo ""
+	@echo -e "$(YELLOW)Next steps:$(NC)"
+	@echo "  1. Review configuration: $(PODS_DIR)/shared/.env"
+	@echo "  2. If already installed, uninstall first: sudo make uninstall"
+	@echo "  3. Install runners: sudo make install"
+	@echo "  4. Start runners: sudo make start"
+	@echo "  5. Check status: sudo make status"
+	@echo ""
+	@echo -e "$(YELLOW)Note:$(NC) Token expires in 1 hour. Use 'make repo-token REPO=$(REPO)' to regenerate."
+	@echo ""
+
+repo-reinstall: ## Full repository switch with automatic reinstallation (requires root)
+	@if [ "$$(id -u)" -ne 0 ]; then \
+		echo "$(RED)ERROR: This target must be run as root (use sudo make repo-reinstall REPO=<alias>)$(NC)"; \
+		exit 1; \
+	fi
+	@if [ -z "$(REPO)" ]; then \
+		echo "$(RED)ERROR: REPO parameter required$(NC)"; \
+		echo "Usage: sudo make repo-reinstall REPO=<alias>"; \
+		echo ""; \
+		echo "Available repositories:"; \
+		$(SCRIPTS_DIR)/repo-config.sh list; \
+		exit 1; \
+	fi
+	@echo -e "$(CYAN)════════════════════════════════════════════════════════════════════$(NC)"
+	@echo -e "$(CYAN)Full Repository Switch: $(YELLOW)$(REPO)$(NC)"
+	@echo -e "$(CYAN)════════════════════════════════════════════════════════════════════$(NC)"
+	@echo ""
+	@echo -e "$(YELLOW)This will:$(NC)"
+	@echo "  1. Stop currently running runners"
+	@echo "  2. Uninstall current configuration"
+	@echo "  3. Generate new .env with fresh token"
+	@echo "  4. Install new configuration"
+	@echo "  5. Start runners for new repository"
+	@echo ""
+	@read -p "Continue? (yes/no): " CONFIRM; \
+	if [ "$$CONFIRM" != "yes" ]; then \
+		echo "$(YELLOW)Aborted by user$(NC)"; \
+		exit 1; \
+	fi
+	@echo ""
+	@echo -e "$(CYAN)Step 1/5:$(NC) Stopping current runners..."
+	@$(MAKE) stop 2>/dev/null || true
+	@echo ""
+	@echo -e "$(CYAN)Step 2/5:$(NC) Uninstalling current configuration..."
+	@$(MAKE) uninstall 2>/dev/null || true
+	@echo ""
+	@echo -e "$(CYAN)Step 3/5:$(NC) Generating new configuration..."
+	@sudo -u $$SUDO_USER $(MAKE) repo-switch REPO=$(REPO)
+	@echo ""
+	@echo -e "$(CYAN)Step 4/5:$(NC) Installing new configuration..."
+	@$(MAKE) install
+	@echo ""
+	@echo -e "$(CYAN)Step 5/5:$(NC) Starting runners..."
+	@$(MAKE) start
+	@echo ""
+	@echo -e "$(CYAN)════════════════════════════════════════════════════════════════════$(NC)"
+	@echo -e "$(GREEN)✓ Repository switch complete!$(NC)"
+	@echo -e "$(CYAN)════════════════════════════════════════════════════════════════════$(NC)"
+	@echo ""
+	@echo -e "$(GREEN)Verification:$(NC)"
+	@sleep 5
+	@echo ""
+	@echo -e "$(YELLOW)Debian Runner:$(NC)"
+	@systemctl status github-runner-debian.service --no-pager -l | grep -E "(Active:|Repository:)" || true
+	@echo ""
+	@echo -e "$(YELLOW)Oracle Runner:$(NC)"
+	@systemctl status github-runner-oracle.service --no-pager -l | grep -E "(Active:|Repository:)" || true
+	@echo ""
+	@echo -e "$(YELLOW)Check runners online:$(NC)"
+	@echo "  gh api repos/$$(grep OWNER= $(CONFIG_DIR)/repositories.conf | grep -A1 "\\[$(REPO)\\]" | tail -1 | cut -d= -f2)/$$(grep REPO= $(CONFIG_DIR)/repositories.conf | grep -A2 "\\[$(REPO)\\]" | tail -1 | cut -d= -f2)/actions/runners"
+	@echo ""
+	@echo -e "$(YELLOW)Full logs:$(NC)"
+	@echo "  make logs          # Follow all logs"
+	@echo "  make logs-debian   # Debian runner only"
+	@echo "  make logs-oracle   # Oracle runner only"
+	@echo ""
